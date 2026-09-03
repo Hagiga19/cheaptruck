@@ -6,6 +6,7 @@ import type {
   ReactNode,
 } from 'react'
 import * as THREE from 'three'
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import {
   ArrowLeft,
   ArrowRight,
@@ -20,30 +21,48 @@ import {
   ImagePlus,
   LampDesk,
   LayoutDashboard,
+  Link,
   LogIn,
   MapPin,
   Move3D,
-  Paintbrush,
+  PackagePlus,
   PanelLeft,
   Plus,
+  RotateCcw,
+  RotateCw,
   Ruler,
   Search,
+  Settings2,
   ShoppingBag,
-  SlidersHorizontal,
+  Sofa,
   Sparkles,
   Square,
+  Table2,
   Truck,
   Upload,
   UserRound,
   WandSparkles,
   Wifi,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import './App.css'
 
 type AuthMode = 'create' | 'signin'
 type ViewMode = '2d' | '3d'
-type Screen = 'start' | 'wizard' | 'rooms'
-type RoomObjectKind = 'wall' | 'door' | 'window' | 'hang'
+type CameraPreset = 'corner' | 'top' | 'front'
+type Screen =
+  | 'start'
+  | 'wizard'
+  | 'rooms'
+  | 'inspired'
+  | 'marketplace'
+  | 'carrier'
+  | 'uploads'
+  | 'prices'
+  | 'facebook'
+  | 'profile'
+  | 'review'
+type RoomObjectKind = 'wall' | 'door' | 'window' | 'art' | 'sofa' | 'table' | 'lamp' | 'rug' | 'cabinet'
 
 type Address = {
   state: string
@@ -59,8 +78,12 @@ type RoomObject = {
   name: string
   x: number
   y: number
-  width: number
-  height: number
+  widthIn: number
+  depthIn: number
+  heightIn: number
+  rotation: number
+  color: string
+  imageUrl?: string
 }
 
 type ItemDetail = {
@@ -72,6 +95,7 @@ type ItemDetail = {
   color: string
   auto: boolean
   fetch: boolean
+  imageUrl?: string
 }
 
 type DesignOption = {
@@ -86,30 +110,87 @@ type DesignOption = {
   items: string[]
 }
 
+type Backdrop = {
+  id: string
+  label: string
+  className: string
+  floor: string
+  wall: string
+  accent: string
+}
+
+const ROOM_WIDTH_IN = 216
+const ROOM_DEPTH_IN = 144
+const ROOM_WIDTH_FT = ROOM_WIDTH_IN / 12
+const ROOM_DEPTH_FT = ROOM_DEPTH_IN / 12
+
 const wizardSteps = [
-  { id: 'shape', label: 'Shape', icon: Ruler },
-  { id: 'style', label: 'Style', icon: Paintbrush },
+  { id: 'shape', label: 'Room', icon: Ruler },
+  { id: 'style', label: 'Style', icon: Sparkles },
   { id: 'items', label: 'Items', icon: ShoppingBag },
-  { id: 'details', label: 'Sizing', icon: SlidersHorizontal },
+  { id: 'details', label: 'Sizing', icon: Settings2 },
   { id: 'fetch', label: 'Fetch', icon: Wifi },
   { id: 'budget', label: 'Budget', icon: DollarSign },
-  { id: 'address', label: 'Address', icon: MapPin },
-  { id: 'options', label: 'Options', icon: Sparkles },
+  { id: 'address', label: 'Location', icon: MapPin },
+  { id: 'options', label: 'Designs', icon: Sofa },
 ]
 
-const menuItems = [
-  { label: 'View your rooms', icon: LayoutDashboard, action: 'rooms' },
-  { label: 'Get inspired', icon: Sparkles, action: 'inspired' },
-  { label: 'Find items', icon: Search, action: 'items' },
-  { label: 'Find a carrier', icon: Truck, action: 'carrier' },
-  { label: 'Upload items', icon: Upload, action: 'upload' },
-  { label: 'Compare prices', icon: Gauge, action: 'prices' },
-  { label: 'Connect Facebook', icon: Wifi, action: 'facebook' },
+const menuItems: { label: string; icon: LucideIcon; screen: Screen }[] = [
+  { label: 'View your rooms', icon: LayoutDashboard, screen: 'rooms' },
+  { label: 'Get inspired', icon: Sparkles, screen: 'inspired' },
+  { label: 'Find items', icon: Search, screen: 'marketplace' },
+  { label: 'Find a carrier', icon: Truck, screen: 'carrier' },
+  { label: 'Upload items', icon: Upload, screen: 'uploads' },
+  { label: 'Compare prices', icon: Gauge, screen: 'prices' },
+  { label: 'Connect Facebook', icon: Wifi, screen: 'facebook' },
 ]
 
-const styleSuggestions = ['Neo cozy', 'Warm minimal', 'Japandi', 'Industrial glass', 'Retro color pop']
+const liveBackdrops: Backdrop[] = [
+  {
+    id: 'studio',
+    label: 'Bright studio',
+    className: 'backdrop-studio',
+    floor: '#d8d2c7',
+    wall: '#f8faf7',
+    accent: '#486b62',
+  },
+  {
+    id: 'loft',
+    label: 'City loft',
+    className: 'backdrop-loft',
+    floor: '#c8c3ba',
+    wall: '#eef1ee',
+    accent: '#5f6f7a',
+  },
+  {
+    id: 'warm',
+    label: 'Warm bedroom',
+    className: 'backdrop-warm',
+    floor: '#d6c2a6',
+    wall: '#fbf5ea',
+    accent: '#8d6b4f',
+  },
+]
+
+const objectDefaults: Record<
+  RoomObjectKind,
+  { label: string; icon: LucideIcon; widthIn: number; depthIn: number; heightIn: number; color: string }
+> = {
+  wall: { label: 'Wall', icon: BrickWall, widthIn: 144, depthIn: 5, heightIn: 96, color: '#8d9791' },
+  door: { label: 'Door', icon: DoorOpen, widthIn: 36, depthIn: 6, heightIn: 82, color: '#b79266' },
+  window: { label: 'Window', icon: Square, widthIn: 52, depthIn: 5, heightIn: 44, color: '#a9bfcb' },
+  art: { label: 'Art', icon: ImagePlus, widthIn: 34, depthIn: 4, heightIn: 32, color: '#bd8672' },
+  sofa: { label: 'Sofa', icon: Sofa, widthIn: 84, depthIn: 38, heightIn: 34, color: '#8aa18c' },
+  table: { label: 'Table', icon: Table2, widthIn: 46, depthIn: 28, heightIn: 18, color: '#9a7b5b' },
+  lamp: { label: 'Lamp', icon: LampDesk, widthIn: 18, depthIn: 18, heightIn: 64, color: '#c8b36d' },
+  rug: { label: 'Rug', icon: Square, widthIn: 96, depthIn: 72, heightIn: 2, color: '#b9b0a4' },
+  cabinet: { label: 'Cabinet', icon: Box, widthIn: 54, depthIn: 20, heightIn: 34, color: '#7f8a84' },
+}
+
+const catalogKinds: RoomObjectKind[] = ['wall', 'door', 'window', 'sofa', 'table', 'lamp', 'rug', 'cabinet', 'art']
+const styleSuggestions = ['Scandinavian calm', 'Bright modern', 'Compact cozy', 'Warm wood', 'Gallery wall']
 const itemSuggestions = ['Sofa', 'Coffee table', 'Floor lamp', 'Media console', 'Bookshelf', 'Accent chair']
-const colorChoices = ['#36f4ff', '#b8ff5c', '#ff5ad7', '#ffd166', '#f4f0e8', '#8ef0c9']
+const colorChoices = ['#8aa18c', '#9a7b5b', '#a9bfcb', '#d7d2c5', '#bd8672', '#6f7974']
 
 const initialAddress: Address = {
   state: 'NY',
@@ -120,23 +201,31 @@ const initialAddress: Address = {
 }
 
 const initialObjects: RoomObject[] = [
-  { id: 'wall-1', kind: 'wall', name: 'Wall 1', x: 12, y: 17, width: 56, height: 4 },
-  { id: 'wall-2', kind: 'wall', name: 'Wall 2', x: 12, y: 67, width: 56, height: 4 },
-  { id: 'door-1', kind: 'door', name: 'Door 1', x: 70, y: 60, width: 14, height: 10 },
-  { id: 'window-1', kind: 'window', name: 'Window 1', x: 32, y: 18, width: 18, height: 3 },
-  { id: 'hang-1', kind: 'hang', name: 'Art rail 1', x: 70, y: 34, width: 13, height: 12 },
+  createRoomObject('wall', 16, 20, 0, 'Wall 1'),
+  createRoomObject('wall', 16, 78, 0, 'Wall 2'),
+  createRoomObject('door', 82, 68, 90, 'Door 1'),
+  createRoomObject('window', 44, 20, 0, 'Window 1'),
+  createRoomObject('sofa', 48, 55, 0, 'Sofa 1'),
+  createRoomObject('table', 49, 43, 0, 'Coffee table 1'),
+  createRoomObject('lamp', 73, 39, 0, 'Floor lamp 1'),
 ]
 
 const initialItems: ItemDetail[] = [
-  { id: 'sofa', name: 'Sofa', length: 86, height: 33, width: 36, color: '#36f4ff', auto: false, fetch: true },
-  { id: 'coffee-table', name: 'Coffee table', length: 42, height: 18, width: 24, color: '#b8ff5c', auto: true, fetch: true },
-  { id: 'floor-lamp', name: 'Floor lamp', length: 16, height: 64, width: 16, color: '#ffd166', auto: true, fetch: false },
+  { id: 'sofa', name: 'Sofa', length: 86, height: 33, width: 36, color: '#8aa18c', auto: false, fetch: true },
+  { id: 'coffee-table', name: 'Coffee table', length: 42, height: 18, width: 24, color: '#9a7b5b', auto: true, fetch: true },
+  { id: 'floor-lamp', name: 'Floor lamp', length: 16, height: 64, width: 16, color: '#c8b36d', auto: true, fetch: false },
 ]
 
 const savedRooms = [
-  { name: 'Living room', status: 'Draft option ready', price: '$1,240', freshness: '2 listings need refresh' },
+  { name: 'Living room', status: 'Draft design ready', price: '$1,240', freshness: '2 listings need refresh' },
   { name: 'Kitchen', status: 'Measurements needed', price: '$680 target', freshness: 'No Marketplace fetch yet' },
   { name: 'Bedroom', status: 'Saved inspiration', price: '$920 target', freshness: 'Ready to reopen' },
+]
+
+const marketplaceItems = [
+  { name: 'Low sage sofa', price: '$420', distance: '3.2 mi', kind: 'sofa' as RoomObjectKind },
+  { name: 'Round wood table', price: '$95', distance: '1.4 mi', kind: 'table' as RoomObjectKind },
+  { name: 'Narrow storage cabinet', price: '$180', distance: '5.1 mi', kind: 'cabinet' as RoomObjectKind },
 ]
 
 function App() {
@@ -145,66 +234,74 @@ function App() {
   const [screen, setScreen] = useState<Screen>('start')
   const [activeStep, setActiveStep] = useState(0)
   const [viewMode, setViewMode] = useState<ViewMode>('2d')
+  const [cameraPreset, setCameraPreset] = useState<CameraPreset>('corner')
+  const [resetCameraKey, setResetCameraKey] = useState(0)
+  const [showMeasurements, setShowMeasurements] = useState(true)
+  const [liveBackgrounds, setLiveBackgrounds] = useState(true)
+  const [activeBackdropId, setActiveBackdropId] = useState(liveBackdrops[0].id)
   const [objects, setObjects] = useState(initialObjects)
-  const [selectedObjectId, setSelectedObjectId] = useState(initialObjects[0].id)
+  const [selectedObjectId, setSelectedObjectId] = useState(initialObjects[4].id)
   const [address, setAddress] = useState(initialAddress)
-  const [styleAnswer, setStyleAnswer] = useState('clean, futuristic, comfortable, not too expensive')
-  const [selectedStyles, setSelectedStyles] = useState(['Neo cozy', 'Warm minimal'])
+  const [styleAnswer, setStyleAnswer] = useState('bright, modern, affordable, with enough room to walk')
+  const [selectedStyles, setSelectedStyles] = useState(['Bright modern', 'Warm wood'])
   const [wantedItems, setWantedItems] = useState(['Sofa', 'Coffee table', 'Floor lamp'])
   const [itemDetails, setItemDetails] = useState(initialItems)
   const [fetchFromWeb, setFetchFromWeb] = useState(true)
   const [budget, setBudget] = useState(1450)
+  const [facebookConnected, setFacebookConnected] = useState(false)
   const [generating, setGenerating] = useState(false)
-  const [selectedOptionId, setSelectedOptionId] = useState('pulse-loft')
-  const [activityMessage, setActivityMessage] = useState('Room shell synced to Measurements')
+  const [selectedOptionId, setSelectedOptionId] = useState('clear-slate')
+  const [activityMessage, setActivityMessage] = useState('Planner ready')
 
+  const activeBackdrop = liveBackdrops.find((backdrop) => backdrop.id === activeBackdropId) ?? liveBackdrops[0]
   const activeWizardStep = wizardSteps[activeStep]
   const selectedObject = objects.find((object) => object.id === selectedObjectId) ?? objects[0]
+  const uploadedObjects = objects.filter((object) => object.imageUrl)
 
   const designOptions = useMemo<DesignOption[]>(
     () => [
       {
-        id: 'pulse-loft',
-        name: 'Pulse Loft',
-        mood: 'low sofa, bright art rail, chrome table',
+        id: 'clear-slate',
+        name: 'Clear Slate',
+        mood: 'open walkway, low sofa, wood table, calm wall art',
         price: Math.max(620, budget - 210),
         pool: 'Strong',
         health: 'Fresh',
-        fit: '92%',
-        accent: '#36f4ff',
+        fit: '94%',
+        accent: '#486b62',
         items: ['Sofa', 'Coffee table', 'Floor lamp'],
       },
       {
         id: 'market-calm',
         name: 'Market Calm',
-        mood: 'warm wood, compact layout, flexible lamp',
+        mood: 'compact layout, warm cabinet, flexible lighting',
         price: Math.max(540, budget - 360),
         pool: 'Medium',
         health: 'One stale',
         fit: '88%',
-        accent: '#b8ff5c',
+        accent: '#8d6b4f',
         items: ['Loveseat', 'Round table', 'Bookshelf'],
       },
       {
-        id: 'color-rig',
-        name: 'Color Rig',
-        mood: 'bold chair, shelf wall, glowing corner',
+        id: 'soft-gallery',
+        name: 'Soft Gallery',
+        mood: 'neutral furniture, framed wall, extra storage',
         price: Math.min(budget + 90, 2450),
         pool: 'Thin',
         health: 'Needs backup',
-        fit: '79%',
-        accent: '#ff5ad7',
+        fit: '81%',
+        accent: '#5f6f7a',
         items: ['Accent chair', 'Console', 'Floor lamp'],
       },
       {
-        id: 'clean-signal',
-        name: 'Clean Signal',
-        mood: 'simple shapes, brighter walkway, easy pickup',
+        id: 'easy-pickup',
+        name: 'Easy Pickup',
+        mood: 'few large items, strong fit, easiest transport path',
         price: Math.max(480, budget - 500),
         pool: 'Strong',
         health: 'Fresh',
-        fit: '95%',
-        accent: '#ffd166',
+        fit: '96%',
+        accent: '#6f7974',
         items: ['Sofa', 'Nesting tables', 'Media console'],
       },
     ],
@@ -213,6 +310,19 @@ function App() {
 
   const selectedOption = designOptions.find((option) => option.id === selectedOptionId) ?? designOptions[0]
 
+  useEffect(() => {
+    if (!liveBackgrounds || screen !== 'wizard') return
+
+    const timer = window.setInterval(() => {
+      setActiveBackdropId((current) => {
+        const index = liveBackdrops.findIndex((backdrop) => backdrop.id === current)
+        return liveBackdrops[(index + 1) % liveBackdrops.length].id
+      })
+    }, 4500)
+
+    return () => window.clearInterval(timer)
+  }, [liveBackgrounds, screen])
+
   function handleAuthSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSignedIn(true)
@@ -220,45 +330,34 @@ function App() {
     setActivityMessage('Address confirmed before project start')
   }
 
-  function handleMenuAction(action: string) {
-    if (action === 'rooms') {
-      setScreen('rooms')
-      setActivityMessage('Saved rooms opened')
-      return
-    }
+  function handleFacebookAuth() {
+    setFacebookConnected(true)
+    setSignedIn(true)
+    setScreen('start')
+    setActivityMessage('Facebook connected for sign-in prototype')
+  }
 
-    if (action === 'items') {
-      setScreen('wizard')
-      setActiveStep(2)
-      setActivityMessage('Jumped to wanted items')
-      return
-    }
-
-    if (action === 'prices') {
-      setScreen('wizard')
-      setActiveStep(5)
-      setActivityMessage('Budget controls opened')
-      return
-    }
-
-    setActivityMessage(`${labelFromAction(action)} queued for a later product pass`)
+  function openScreen(nextScreen: Screen) {
+    setScreen(nextScreen)
+    setGenerating(false)
+    setActivityMessage(`${screenTitle(nextScreen)} opened`)
   }
 
   function startNewRoom() {
     setScreen('wizard')
     setActiveStep(0)
-    setActivityMessage('New room started')
+    setActivityMessage('Room planner opened')
   }
 
   function goNext() {
     if (activeStep === 6) {
       setGenerating(true)
-      setActivityMessage('AI lining up designs, fit checks, and Marketplace pools')
+      setActivityMessage('Generating designs from the live room state')
       window.setTimeout(() => {
         setGenerating(false)
         setActiveStep(7)
         setActivityMessage('Four design options generated')
-      }, 1100)
+      }, 900)
       return
     }
 
@@ -270,25 +369,41 @@ function App() {
     setActiveStep((step) => Math.max(step - 1, 0))
   }
 
-  function addObject(kind: RoomObjectKind) {
+  function addObject(kind: RoomObjectKind, imageUrl?: string) {
     const count = objects.filter((object) => object.kind === kind).length + 1
-    const object: RoomObject = {
-      id: `${kind}-${Date.now()}`,
-      kind,
-      name: `${kindLabel(kind)} ${count}`,
-      x: clamp(18 + count * 7, 8, 76),
-      y: clamp(22 + count * 8, 12, 74),
-      width: kind === 'wall' ? 34 : kind === 'door' ? 13 : 17,
-      height: kind === 'wall' || kind === 'window' ? 4 : kind === 'door' ? 10 : 12,
-    }
+    const object = createRoomObject(kind, clamp(38 + count * 4, 16, 84), clamp(42 + count * 5, 18, 82), 0, undefined, imageUrl)
 
     setObjects((current) => [...current, object])
     setSelectedObjectId(object.id)
-    setActivityMessage(`${object.name} added to the room`)
+    setActivityMessage(`${object.name} added to room`)
   }
 
   function updateObject(id: string, patch: Partial<RoomObject>) {
     setObjects((current) => current.map((object) => (object.id === id ? { ...object, ...patch } : object)))
+  }
+
+  function deleteSelectedObject() {
+    const index = objects.findIndex((object) => object.id === selectedObject.id)
+    if (index < 0 || objects.length <= 1) return
+
+    const nextObjects = objects.filter((object) => object.id !== selectedObject.id)
+    setObjects(nextObjects)
+    setSelectedObjectId(nextObjects[Math.max(0, index - 1)].id)
+    setActivityMessage(`${selectedObject.name} removed`)
+  }
+
+  function duplicateSelectedObject() {
+    const clone = {
+      ...selectedObject,
+      id: `${selectedObject.kind}-${Date.now()}`,
+      name: `${selectedObject.name} copy`,
+      x: clamp(selectedObject.x + 5, 8, 92),
+      y: clamp(selectedObject.y + 5, 8, 92),
+    }
+
+    setObjects((current) => [...current, clone])
+    setSelectedObjectId(clone.id)
+    setActivityMessage(`${selectedObject.name} duplicated`)
   }
 
   function toggleStyle(style: string) {
@@ -323,13 +438,44 @@ function App() {
     setItemDetails((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)))
   }
 
+  function handleItemImageUpload(id: string, file: File) {
+    readImageFile(file, (imageUrl) => {
+      updateItem(id, { imageUrl })
+      setActivityMessage('Item picture attached')
+    })
+  }
+
+  function handleSelectedObjectImage(file: File) {
+    readImageFile(file, (imageUrl) => {
+      updateObject(selectedObject.id, { imageUrl })
+      setActivityMessage(`${selectedObject.name} picture attached`)
+    })
+  }
+
+  function handleNewUpload(file: File) {
+    readImageFile(file, (imageUrl) => {
+      addObject('cabinet', imageUrl)
+      setActivityMessage('Uploaded item added to room')
+    })
+  }
+
+  function handleUseMarketplaceItem(kind: RoomObjectKind, label: string) {
+    addObject(kind)
+    setScreen('wizard')
+    setActiveStep(0)
+    setViewMode('2d')
+    setActivityMessage(`${label} placed in the planner`)
+  }
+
   if (!signedIn) {
     return (
       <AuthGate
         address={address}
         authMode={authMode}
+        facebookConnected={facebookConnected}
         onAddressChange={setAddress}
         onAuthModeChange={setAuthMode}
+        onFacebookAuth={handleFacebookAuth}
         onSubmit={handleAuthSubmit}
       />
     )
@@ -338,8 +484,8 @@ function App() {
   return (
     <div className="app-shell">
       <aside className="command-rail" aria-label="CheapTruck menu">
-        <button className="brand-mark" onClick={() => setScreen('start')} aria-label="Open project start">
-          <Home size={22} />
+        <button className="brand-mark" onClick={() => openScreen('start')} aria-label="Open project start">
+          <Home size={23} />
           <span>CheapTruck</span>
         </button>
 
@@ -349,12 +495,12 @@ function App() {
             return (
               <button
                 key={item.label}
-                className="menu-button"
-                onClick={() => handleMenuAction(item.action)}
+                className={`menu-button ${screen === item.screen ? 'active' : ''}`}
+                onClick={() => openScreen(item.screen)}
                 title={item.label}
                 aria-label={item.label}
               >
-                <Icon size={18} />
+                <Icon size={19} />
                 <span>{item.label}</span>
               </button>
             )
@@ -365,8 +511,8 @@ function App() {
       <main className="workspace">
         <header className="topbar">
           <div className="topbar-copy">
-            <span className="eyebrow">First UI prototype</span>
-            <h1>{screen === 'wizard' ? activeWizardStep.label : screen === 'rooms' ? 'Your rooms' : 'Start a room'}</h1>
+            <span className="eyebrow">Prototype correction pass</span>
+            <h1>{screen === 'wizard' ? activeWizardStep.label : screenTitle(screen)}</h1>
           </div>
 
           <div className="status-strip" aria-live="polite">
@@ -374,7 +520,7 @@ function App() {
             <span>{activityMessage}</span>
           </div>
 
-          <button className="profile-chip" aria-label="Open user profile" title="User profile">
+          <button className="profile-chip" aria-label="Open user profile" title="User profile" onClick={() => openScreen('profile')}>
             <UserRound size={18} />
             <span>Yahel</span>
           </button>
@@ -383,16 +529,27 @@ function App() {
         {screen === 'start' && (
           <ProjectStart
             address={address}
+            facebookConnected={facebookConnected}
             onContinueRoom={() => {
               setScreen('wizard')
               setActiveStep(7)
+              setActivityMessage('Design options reopened')
             }}
-            onOpenRooms={() => setScreen('rooms')}
+            onOpenRooms={() => openScreen('rooms')}
             onStartNewRoom={startNewRoom}
           />
         )}
 
-        {screen === 'rooms' && <RoomsDashboard onAddRoom={startNewRoom} onOpenDesign={() => setScreen('wizard')} />}
+        {screen === 'rooms' && (
+          <RoomsDashboard
+            onAddRoom={startNewRoom}
+            onOpenDesign={() => {
+              setScreen('wizard')
+              setActiveStep(7)
+              setActivityMessage('Saved design opened')
+            }}
+          />
+        )}
 
         {screen === 'wizard' && (
           <section className="wizard-shell">
@@ -404,7 +561,10 @@ function App() {
                     key={step.id}
                     className={`step-pill ${index === activeStep ? 'active' : ''} ${index < activeStep ? 'complete' : ''}`}
                     onClick={() => {
-                      if (!generating) setActiveStep(index)
+                      if (!generating) {
+                        setActiveStep(index)
+                        setActivityMessage(`${step.label} step opened`)
+                      }
                     }}
                     aria-label={`Open ${step.label}`}
                     title={step.label}
@@ -419,53 +579,46 @@ function App() {
             {generating ? (
               <GeneratingState />
             ) : (
-              <div className="lab-layout">
-                <section className="room-stage" aria-label="Room editor">
-                  <div className="stage-toolbar">
-                    <div className="tool-cluster" role="group" aria-label="Add room structure">
-                      <IconButton label="Add wall" onClick={() => addObject('wall')} icon={<BrickWall size={17} />} />
-                      <IconButton label="Add door" onClick={() => addObject('door')} icon={<DoorOpen size={17} />} />
-                      <IconButton label="Add window" onClick={() => addObject('window')} icon={<Square size={17} />} />
-                      <IconButton label="Add hanging object" onClick={() => addObject('hang')} icon={<ImagePlus size={17} />} />
-                    </div>
-
-                    <div className="mode-toggle" role="group" aria-label="Room view">
-                      <button
-                        className={viewMode === '2d' ? 'active' : ''}
-                        onClick={() => setViewMode('2d')}
-                        aria-label="2D view"
-                        title="2D view"
-                      >
-                        <PanelLeft size={17} />
-                        <span>2D</span>
-                      </button>
-                      <button
-                        className={viewMode === '3d' ? 'active' : ''}
-                        onClick={() => setViewMode('3d')}
-                        aria-label="3D view"
-                        title="3D view"
-                      >
-                        <Move3D size={17} />
-                        <span>3D</span>
-                      </button>
-                    </div>
-                  </div>
+              <div className="planner-layout">
+                <section className="room-stage" aria-label="Room planner">
+                  <PlannerToolbar
+                    activeBackdropId={activeBackdropId}
+                    cameraPreset={cameraPreset}
+                    liveBackgrounds={liveBackgrounds}
+                    showMeasurements={showMeasurements}
+                    viewMode={viewMode}
+                    onAddObject={addObject}
+                    onCameraPresetChange={setCameraPreset}
+                    onResetCamera={() => setResetCameraKey((value) => value + 1)}
+                    onSetBackdrop={setActiveBackdropId}
+                    onToggleLiveBackgrounds={() => setLiveBackgrounds((value) => !value)}
+                    onToggleMeasurements={() => setShowMeasurements((value) => !value)}
+                    onViewModeChange={setViewMode}
+                  />
 
                   <div className="stage-viewport">
                     {viewMode === '2d' ? (
                       <RoomCanvas2D
+                        activeBackdrop={activeBackdrop}
                         objects={objects}
                         selectedObjectId={selectedObjectId}
+                        showMeasurements={showMeasurements}
                         onMoveObject={updateObject}
                         onSelectObject={setSelectedObjectId}
                       />
                     ) : (
-                      <RoomScene3D objects={objects} selectedObjectId={selectedObjectId} />
+                      <RoomScene3D
+                        activeBackdrop={activeBackdrop}
+                        cameraPreset={cameraPreset}
+                        objects={objects}
+                        resetKey={resetCameraKey}
+                        selectedObjectId={selectedObjectId}
+                      />
                     )}
                   </div>
                 </section>
 
-                <aside className="control-deck" aria-label="Wizard controls">
+                <aside className="control-deck" aria-label="Planner controls">
                   <WizardPanel
                     activeStep={activeStep}
                     address={address}
@@ -482,7 +635,12 @@ function App() {
                     wantedItems={wantedItems}
                     onAddressChange={setAddress}
                     onBudgetChange={setBudget}
+                    onDeleteObject={deleteSelectedObject}
+                    onDuplicateObject={duplicateSelectedObject}
                     onFetchFromWebChange={setFetchFromWeb}
+                    onItemImageUpload={handleItemImageUpload}
+                    onNewUpload={handleNewUpload}
+                    onSelectedObjectImage={handleSelectedObjectImage}
                     onSelectObject={setSelectedObjectId}
                     onSelectOption={setSelectedOptionId}
                     onStyleAnswerChange={setStyleAnswer}
@@ -503,7 +661,7 @@ function App() {
                         <ArrowRight size={17} />
                       </button>
                     ) : (
-                      <button className="primary-action" onClick={() => setScreen('rooms')}>
+                      <button className="primary-action" onClick={() => openScreen('rooms')}>
                         <span>Save room</span>
                         <Check size={17} />
                       </button>
@@ -514,6 +672,29 @@ function App() {
             )}
           </section>
         )}
+
+        {isShortcutScreen(screen) && (
+          <ShortcutPanel
+            address={address}
+            budget={budget}
+            facebookConnected={facebookConnected}
+            screen={screen}
+            uploadedObjects={uploadedObjects}
+            onAddMarketplaceItem={handleUseMarketplaceItem}
+            onConnectFacebook={() => {
+              setFacebookConnected(true)
+              setActivityMessage('Facebook connected for Marketplace prototype')
+            }}
+            onDisconnectFacebook={() => {
+              setFacebookConnected(false)
+              setActivityMessage('Facebook disconnected')
+            }}
+            onNewUpload={handleNewUpload}
+            onOpenPlanner={startNewRoom}
+            onAddressChange={setAddress}
+            onSetBudget={setBudget}
+          />
+        )}
       </main>
     </div>
   )
@@ -522,14 +703,18 @@ function App() {
 function AuthGate({
   address,
   authMode,
+  facebookConnected,
   onAddressChange,
   onAuthModeChange,
+  onFacebookAuth,
   onSubmit,
 }: {
   address: Address
   authMode: AuthMode
+  facebookConnected: boolean
   onAddressChange: (address: Address) => void
   onAuthModeChange: (mode: AuthMode) => void
+  onFacebookAuth: () => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
 }) {
   return (
@@ -541,19 +726,19 @@ function AuthGate({
           </div>
           <p>CheapTruck</p>
         </div>
-        <div className="signal-room" aria-hidden="true">
-          <div className="signal-floor" />
-          <div className="signal-wall one" />
-          <div className="signal-wall two" />
-          <div className="signal-sofa" />
-          <div className="signal-table" />
-          <div className="signal-lamp" />
-          <div className="signal-route" />
+        <div className="light-room-preview" aria-hidden="true">
+          <div className="preview-wall left" />
+          <div className="preview-wall back" />
+          <div className="preview-floor" />
+          <div className="preview-sofa" />
+          <div className="preview-table" />
+          <div className="preview-window" />
+          <div className="preview-path" />
         </div>
         <div className="hero-copy">
           <span className="eyebrow">Marketplace-powered room design</span>
           <h1>CheapTruck</h1>
-          <p>Design the room first, then keep every listing, fit check, price, and pickup detail visible.</p>
+          <p>Plan the room, place your own items, then compare local listings with fit and pickup details visible.</p>
         </div>
       </section>
 
@@ -592,9 +777,9 @@ function AuthGate({
           <input type="password" placeholder="password" required />
         </label>
 
-        <button type="button" className="facebook-action">
+        <button type="button" className={`facebook-action ${facebookConnected ? 'connected' : ''}`} onClick={onFacebookAuth}>
           <Wifi size={17} />
-          <span>Continue with Facebook</span>
+          <span>{facebookConnected ? 'Continue with Facebook connected' : 'Continue with Facebook'}</span>
         </button>
 
         <fieldset className="address-fieldset">
@@ -652,43 +837,49 @@ function AuthGate({
 
 function ProjectStart({
   address,
+  facebookConnected,
   onContinueRoom,
   onOpenRooms,
   onStartNewRoom,
 }: {
   address: Address
+  facebookConnected: boolean
   onContinueRoom: () => void
   onOpenRooms: () => void
   onStartNewRoom: () => void
 }) {
   return (
     <section className="start-grid">
-      <div className="launch-panel">
+      <div className="launch-panel live-panel">
         <span className="eyebrow">Account and address ready</span>
-        <h2>Build a room from measurements to Marketplace options.</h2>
+        <h2>Start with a real room planner, then bring in Marketplace options.</h2>
         <div className="launch-actions">
           <button className="primary-action" onClick={onStartNewRoom}>
             <Plus size={18} />
             <span>Create a new room</span>
           </button>
           <button className="secondary-action" onClick={onContinueRoom}>
-            <Sparkles size={18} />
+            <Sofa size={18} />
             <span>View design options</span>
           </button>
         </div>
-        <div className="address-confirmation">
-          <MapPin size={18} />
+        <div className="confirmation-row">
           <span>
-            {address.street}, {address.city}, {address.state}
+            <MapPin size={17} />
+            {address.street}, {address.city}
+          </span>
+          <span>
+            <Wifi size={17} />
+            Facebook {facebookConnected ? 'connected' : 'not connected'}
           </span>
         </div>
       </div>
 
       <div className="mission-board">
-        <StatusNode label="Request" value="style and wanted items" active />
-        <StatusNode label="Measurements" value="room shell started" active />
-        <StatusNode label="Marketplace" value="fetch allowed per item" />
-        <StatusNode label="Room designs" value="options with fit notes" />
+        <StatusNode label="Room handling" value="move, resize, rotate, view in 3D" active />
+        <StatusNode label="Uploads" value="own item photos can be placed" active />
+        <StatusNode label="Marketplace" value="candidate pools stay visible" />
+        <StatusNode label="Fit" value="dimensions update the live scene" />
       </div>
 
       <button className="saved-room-strip" onClick={onOpenRooms}>
@@ -725,14 +916,103 @@ function RoomsDashboard({ onAddRoom, onOpenDesign }: { onAddRoom: () => void; on
   )
 }
 
+function PlannerToolbar({
+  activeBackdropId,
+  cameraPreset,
+  liveBackgrounds,
+  showMeasurements,
+  viewMode,
+  onAddObject,
+  onCameraPresetChange,
+  onResetCamera,
+  onSetBackdrop,
+  onToggleLiveBackgrounds,
+  onToggleMeasurements,
+  onViewModeChange,
+}: {
+  activeBackdropId: string
+  cameraPreset: CameraPreset
+  liveBackgrounds: boolean
+  showMeasurements: boolean
+  viewMode: ViewMode
+  onAddObject: (kind: RoomObjectKind) => void
+  onCameraPresetChange: (preset: CameraPreset) => void
+  onResetCamera: () => void
+  onSetBackdrop: (id: string) => void
+  onToggleLiveBackgrounds: () => void
+  onToggleMeasurements: () => void
+  onViewModeChange: (mode: ViewMode) => void
+}) {
+  return (
+    <div className="stage-toolbar">
+      <div className="catalog-strip" aria-label="Add objects">
+        {catalogKinds.map((kind) => {
+          const Icon = objectDefaults[kind].icon
+          return (
+            <button key={kind} className="tool-button" onClick={() => onAddObject(kind)} title={`Add ${objectDefaults[kind].label}`} aria-label={`Add ${objectDefaults[kind].label}`}>
+              <Icon size={17} />
+              <span>{objectDefaults[kind].label}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      <div className="toolbar-groups">
+        <div className="mode-toggle" role="group" aria-label="Room view">
+          <button className={viewMode === '2d' ? 'active' : ''} onClick={() => onViewModeChange('2d')} aria-label="2D view">
+            <PanelLeft size={17} />
+            <span>2D</span>
+          </button>
+          <button className={viewMode === '3d' ? 'active' : ''} onClick={() => onViewModeChange('3d')} aria-label="3D view">
+            <Move3D size={17} />
+            <span>3D</span>
+          </button>
+        </div>
+
+        <div className="mini-button-row" role="group" aria-label="Planner helpers">
+          <button className={showMeasurements ? 'active' : ''} onClick={onToggleMeasurements} aria-label="Toggle measurements" title="Toggle measurements">
+            <Ruler size={16} />
+          </button>
+          <button className={liveBackgrounds ? 'active' : ''} onClick={onToggleLiveBackgrounds} aria-label="Toggle live backgrounds" title="Toggle live backgrounds">
+            <Sparkles size={16} />
+          </button>
+        </div>
+      </div>
+
+      <div className="backdrop-row" aria-label="Live backgrounds">
+        {liveBackdrops.map((backdrop) => (
+          <button key={backdrop.id} className={activeBackdropId === backdrop.id ? 'active' : ''} onClick={() => onSetBackdrop(backdrop.id)}>
+            {backdrop.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="camera-row" aria-label="3D camera controls">
+        {(['corner', 'top', 'front'] as CameraPreset[]).map((preset) => (
+          <button key={preset} className={cameraPreset === preset ? 'active' : ''} onClick={() => onCameraPresetChange(preset)}>
+            {preset}
+          </button>
+        ))}
+        <button onClick={onResetCamera} aria-label="Reset camera" title="Reset camera">
+          <RotateCcw size={15} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function RoomCanvas2D({
+  activeBackdrop,
   objects,
   onMoveObject,
   onSelectObject,
   selectedObjectId,
+  showMeasurements,
 }: {
+  activeBackdrop: Backdrop
   objects: RoomObject[]
   selectedObjectId: string
+  showMeasurements: boolean
   onMoveObject: (id: string, patch: Partial<RoomObject>) => void
   onSelectObject: (id: string) => void
 }) {
@@ -747,8 +1027,8 @@ function RoomCanvas2D({
     const nextY = ((event.clientY - rect.top - dragging.offsetY) / rect.height) * 100
 
     onMoveObject(dragging.id, {
-      x: clamp(nextX, 3, 90),
-      y: clamp(nextY, 3, 88),
+      x: clamp(nextX, 4, 96),
+      y: clamp(nextY, 4, 96),
     })
   }
 
@@ -767,7 +1047,7 @@ function RoomCanvas2D({
 
   return (
     <div
-      className="room-board"
+      className={`room-board ${activeBackdrop.className}`}
       ref={boardRef}
       onPointerMove={handlePointerMove}
       onPointerUp={() => setDragging(null)}
@@ -781,35 +1061,62 @@ function RoomCanvas2D({
         12 ft
       </div>
 
-      {objects.map((object) => (
-        <button
-          key={object.id}
-          className={`room-object ${object.kind} ${selectedObjectId === object.id ? 'selected' : ''}`}
-          style={{
-            left: `${object.x}%`,
-            top: `${object.y}%`,
-            width: `${object.width}%`,
-            height: `${object.height}%`,
-          }}
-          onClick={() => onSelectObject(object.id)}
-          onKeyDown={(event) => {
-            if (event.key === 'ArrowLeft') onMoveObject(object.id, { x: clamp(object.x - 2, 3, 90) })
-            if (event.key === 'ArrowRight') onMoveObject(object.id, { x: clamp(object.x + 2, 3, 90) })
-            if (event.key === 'ArrowUp') onMoveObject(object.id, { y: clamp(object.y - 2, 3, 88) })
-            if (event.key === 'ArrowDown') onMoveObject(object.id, { y: clamp(object.y + 2, 3, 88) })
-          }}
-          onPointerDown={(event) => handlePointerDown(event, object)}
-          title={object.name}
-          aria-label={`Select ${object.name}`}
-        >
-          <span>{object.name}</span>
-        </button>
-      ))}
+      {objects.map((object) => {
+        const widthPct = inchesToWidthPercent(object.widthIn)
+        const depthPct = inchesToDepthPercent(object.depthIn)
+        return (
+          <button
+            key={object.id}
+            className={`plan-object ${object.kind} ${selectedObjectId === object.id ? 'selected' : ''}`}
+            style={
+              {
+                '--object-color': object.color,
+                backgroundImage: object.imageUrl ? `url(${object.imageUrl})` : undefined,
+                height: `${depthPct}%`,
+                left: `${object.x}%`,
+                top: `${object.y}%`,
+                transform: `translate(-50%, -50%) rotate(${object.rotation}deg)`,
+                width: `${widthPct}%`,
+              } as CSSProperties
+            }
+            onClick={() => onSelectObject(object.id)}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowLeft') onMoveObject(object.id, { x: clamp(object.x - 2, 4, 96) })
+              if (event.key === 'ArrowRight') onMoveObject(object.id, { x: clamp(object.x + 2, 4, 96) })
+              if (event.key === 'ArrowUp') onMoveObject(object.id, { y: clamp(object.y - 2, 4, 96) })
+              if (event.key === 'ArrowDown') onMoveObject(object.id, { y: clamp(object.y + 2, 4, 96) })
+              if (event.key.toLowerCase() === 'r') onMoveObject(object.id, { rotation: normalizeRotation(object.rotation + 15) })
+            }}
+            onPointerDown={(event) => handlePointerDown(event, object)}
+            title={object.name}
+            aria-label={`Select ${object.name}`}
+          >
+            <span>{object.name}</span>
+            {showMeasurements && (
+              <small>
+                {object.widthIn} x {object.depthIn}
+              </small>
+            )}
+          </button>
+        )
+      })}
     </div>
   )
 }
 
-function RoomScene3D({ objects, selectedObjectId }: { objects: RoomObject[]; selectedObjectId: string }) {
+function RoomScene3D({
+  activeBackdrop,
+  cameraPreset,
+  objects,
+  resetKey,
+  selectedObjectId,
+}: {
+  activeBackdrop: Backdrop
+  cameraPreset: CameraPreset
+  objects: RoomObject[]
+  resetKey: number
+  selectedObjectId: string
+}) {
   const hostRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -818,90 +1125,76 @@ function RoomScene3D({ objects, selectedObjectId }: { objects: RoomObject[]; sel
     const mount = host
 
     const scene = new THREE.Scene()
-    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100)
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true })
-    const roomGroup = new THREE.Group()
-    const pointer = { x: 0, y: 0 }
+    scene.background = new THREE.Color(activeBackdrop.wall)
 
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 120)
+    setCameraPosition(camera, cameraPreset)
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-    renderer.setClearColor(0x050607, 0)
+    renderer.shadowMap.enabled = true
     mount.appendChild(renderer.domElement)
 
-    camera.position.set(4.8, 4.3, 6.2)
-    camera.lookAt(0, 0.7, 0)
+    const controls = new OrbitControls(camera, renderer.domElement)
+    controls.enableDamping = true
+    controls.dampingFactor = 0.08
+    controls.enablePan = true
+    controls.minDistance = 5
+    controls.maxDistance = 30
+    controls.maxPolarAngle = Math.PI / 2.05
+    controls.target.set(0, 0.8, 0)
+
+    const roomGroup = new THREE.Group()
     scene.add(roomGroup)
 
     const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(6.4, 4.4),
-      new THREE.MeshStandardMaterial({ color: 0x111815, metalness: 0.35, roughness: 0.55 }),
+      new THREE.PlaneGeometry(ROOM_WIDTH_FT, ROOM_DEPTH_FT),
+      new THREE.MeshStandardMaterial({ color: new THREE.Color(activeBackdrop.floor), metalness: 0.05, roughness: 0.64 }),
     )
+    floor.receiveShadow = true
     floor.rotation.x = -Math.PI / 2
     roomGroup.add(floor)
 
     const wallMaterial = new THREE.MeshStandardMaterial({
-      color: 0x1d2422,
-      metalness: 0.28,
-      roughness: 0.42,
-      transparent: true,
-      opacity: 0.82,
+      color: new THREE.Color(activeBackdrop.wall),
+      roughness: 0.72,
     })
 
-    const backWall = new THREE.Mesh(new THREE.BoxGeometry(6.4, 2.4, 0.08), wallMaterial)
-    backWall.position.set(0, 1.2, -2.2)
+    const backWall = new THREE.Mesh(new THREE.BoxGeometry(ROOM_WIDTH_FT, 8, 0.12), wallMaterial)
+    backWall.position.set(0, 4, -ROOM_DEPTH_FT / 2)
+    backWall.receiveShadow = true
     roomGroup.add(backWall)
 
-    const sideWall = new THREE.Mesh(new THREE.BoxGeometry(0.08, 2.4, 4.4), wallMaterial)
-    sideWall.position.set(-3.2, 1.2, 0)
+    const sideWall = new THREE.Mesh(new THREE.BoxGeometry(0.12, 8, ROOM_DEPTH_FT), wallMaterial)
+    sideWall.position.set(-ROOM_WIDTH_FT / 2, 4, 0)
+    sideWall.receiveShadow = true
     roomGroup.add(sideWall)
 
-    const colorsByKind: Record<RoomObjectKind, number> = {
-      wall: 0x35eaff,
-      door: 0xffd166,
-      window: 0xb8ff5c,
-      hang: 0xff5ad7,
-    }
-
-    objects.forEach((object) => {
-      const isSelected = object.id === selectedObjectId
-      const geometry =
-        object.kind === 'hang'
-          ? new THREE.BoxGeometry(0.52, 0.52, 0.08)
-          : new THREE.BoxGeometry(Math.max(0.25, object.width / 12), object.kind === 'wall' ? 0.13 : 0.5, 0.18)
-
-      const material = new THREE.MeshStandardMaterial({
-        color: colorsByKind[object.kind],
-        emissive: colorsByKind[object.kind],
-        emissiveIntensity: isSelected ? 0.38 : 0.14,
-        metalness: 0.42,
-        roughness: 0.28,
-      })
-
-      const mesh = new THREE.Mesh(geometry, material)
-      mesh.position.set((object.x / 100) * 6 - 3, object.kind === 'hang' ? 1.35 : 0.25, (object.y / 100) * 4 - 2)
-      roomGroup.add(mesh)
-    })
-
-    const lineMaterial = new THREE.LineBasicMaterial({ color: 0x6ef7ff, transparent: true, opacity: 0.55 })
-    const grid = new THREE.GridHelper(6.4, 12, 0x293a36, 0x1c2624)
+    const grid = new THREE.GridHelper(ROOM_WIDTH_FT, 18, 0xb9c8c1, 0xd9e1dd)
     grid.position.y = 0.012
     roomGroup.add(grid)
 
-    const pathPoints = [
-      new THREE.Vector3(-2.6, 0.04, 1.6),
-      new THREE.Vector3(-0.8, 0.05, 0.4),
-      new THREE.Vector3(1.4, 0.06, -0.6),
-      new THREE.Vector3(2.3, 0.06, -1.4),
-    ]
-    const path = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pathPoints), lineMaterial)
-    roomGroup.add(path)
+    objects.forEach((object) => {
+      const mesh = createObjectMesh(object, object.id === selectedObjectId)
+      roomGroup.add(mesh)
+    })
 
-    scene.add(new THREE.AmbientLight(0xc7fff4, 0.55))
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.4)
-    keyLight.position.set(2.5, 5, 4)
-    scene.add(keyLight)
-    const neonLight = new THREE.PointLight(0xff5ad7, 2.4, 8)
-    neonLight.position.set(-2.4, 1.5, 1.8)
-    scene.add(neonLight)
+    const walkPath = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(-7, 0.05, 4.6),
+        new THREE.Vector3(-1.8, 0.05, 1.1),
+        new THREE.Vector3(2.2, 0.05, -1.4),
+        new THREE.Vector3(6.5, 0.05, -4),
+      ]),
+      new THREE.LineBasicMaterial({ color: new THREE.Color(activeBackdrop.accent), transparent: true, opacity: 0.65 }),
+    )
+    roomGroup.add(walkPath)
+
+    scene.add(new THREE.HemisphereLight(0xffffff, 0xaeb9b2, 2.2))
+    const sun = new THREE.DirectionalLight(0xffffff, 2.4)
+    sun.position.set(5, 9, 5)
+    sun.castShadow = true
+    scene.add(sun)
 
     function resize() {
       const rect = mount.getBoundingClientRect()
@@ -912,34 +1205,33 @@ function RoomScene3D({ objects, selectedObjectId }: { objects: RoomObject[]; sel
       camera.updateProjectionMatrix()
     }
 
-    function handlePointerMove(event: PointerEvent) {
-      const rect = mount.getBoundingClientRect()
-      pointer.x = ((event.clientX - rect.left) / rect.width - 0.5) * 2
-      pointer.y = ((event.clientY - rect.top) / rect.height - 0.5) * 2
-    }
-
     let frame = 0
     function animate() {
       frame = requestAnimationFrame(animate)
-      roomGroup.rotation.y += (-0.22 + pointer.x * 0.2 - roomGroup.rotation.y) * 0.05
-      roomGroup.rotation.x += (-0.08 + pointer.y * 0.05 - roomGroup.rotation.x) * 0.05
+      controls.update()
       renderer.render(scene, camera)
     }
 
     const observer = new ResizeObserver(resize)
     observer.observe(mount)
-    mount.addEventListener('pointermove', handlePointerMove)
     resize()
     animate()
 
     return () => {
       cancelAnimationFrame(frame)
       observer.disconnect()
-      mount.removeEventListener('pointermove', handlePointerMove)
+      controls.dispose()
       mount.removeChild(renderer.domElement)
       renderer.dispose()
+      scene.traverse((node) => {
+        if (node instanceof THREE.Mesh) {
+          node.geometry.dispose()
+          const materials = Array.isArray(node.material) ? node.material : [node.material]
+          materials.forEach((material) => material.dispose())
+        }
+      })
     }
-  }, [objects, selectedObjectId])
+  }, [activeBackdrop, cameraPreset, objects, resetKey, selectedObjectId])
 
   return <div className="three-room" ref={hostRef} aria-label="Interactive 3D room preview" />
 }
@@ -960,7 +1252,12 @@ function WizardPanel({
   wantedItems,
   onAddressChange,
   onBudgetChange,
+  onDeleteObject,
+  onDuplicateObject,
   onFetchFromWebChange,
+  onItemImageUpload,
+  onNewUpload,
+  onSelectedObjectImage,
   onSelectObject,
   onSelectOption,
   onStyleAnswerChange,
@@ -984,7 +1281,12 @@ function WizardPanel({
   wantedItems: string[]
   onAddressChange: (address: Address) => void
   onBudgetChange: (budget: number) => void
+  onDeleteObject: () => void
+  onDuplicateObject: () => void
   onFetchFromWebChange: (value: boolean) => void
+  onItemImageUpload: (id: string, file: File) => void
+  onNewUpload: (file: File) => void
+  onSelectedObjectImage: (file: File) => void
   onSelectObject: (id: string) => void
   onSelectOption: (id: string) => void
   onStyleAnswerChange: (answer: string) => void
@@ -996,7 +1298,7 @@ function WizardPanel({
   if (activeStep === 0) {
     return (
       <>
-        <PanelHeader icon={<Ruler size={20} />} title="Edit the size and shape of the home" />
+        <PanelHeader icon={<Ruler size={20} />} title="Customise the room" />
         <div className="object-list">
           {objects.map((object) => (
             <button
@@ -1006,29 +1308,18 @@ function WizardPanel({
             >
               <ObjectIcon kind={object.kind} />
               <span>{object.name}</span>
-              <small>
-                {Math.round(object.width)} x {Math.round(object.height)}
-              </small>
+              <small>{object.rotation} deg</small>
             </button>
           ))}
         </div>
 
-        <div className="slider-stack">
-          <RangeControl
-            label="Width"
-            max={70}
-            min={3}
-            value={selectedObject.width}
-            onChange={(value) => onUpdateObject(selectedObject.id, { width: value })}
-          />
-          <RangeControl
-            label="Height"
-            max={34}
-            min={3}
-            value={selectedObject.height}
-            onChange={(value) => onUpdateObject(selectedObject.id, { height: value })}
-          />
-        </div>
+        <ObjectEditor
+          object={selectedObject}
+          onDelete={onDeleteObject}
+          onDuplicate={onDuplicateObject}
+          onImageUpload={onSelectedObjectImage}
+          onUpdate={(patch) => onUpdateObject(selectedObject.id, patch)}
+        />
       </>
     )
   }
@@ -1036,7 +1327,7 @@ function WizardPanel({
   if (activeStep === 1) {
     return (
       <>
-        <PanelHeader icon={<Paintbrush size={20} />} title="What style should your room have?" />
+        <PanelHeader icon={<Sparkles size={20} />} title="What style should your room have?" />
         <textarea
           className="answer-box"
           value={styleAnswer}
@@ -1064,7 +1355,7 @@ function WizardPanel({
   if (activeStep === 3) {
     return (
       <>
-        <PanelHeader icon={<SlidersHorizontal size={20} />} title="Size up your needed items" />
+        <PanelHeader icon={<Settings2 size={20} />} title="Size up your needed items" />
         <div className="item-stack">
           {itemDetails.map((item) => (
             <div className="item-editor" key={item.id}>
@@ -1080,27 +1371,9 @@ function WizardPanel({
                   <span>Auto</span>
                 </button>
               </div>
-              <RangeControl
-                label="Length"
-                max={120}
-                min={8}
-                value={item.length}
-                onChange={(value) => onUpdateItem(item.id, { length: value })}
-              />
-              <RangeControl
-                label="Height"
-                max={96}
-                min={8}
-                value={item.height}
-                onChange={(value) => onUpdateItem(item.id, { height: value })}
-              />
-              <RangeControl
-                label="Width"
-                max={72}
-                min={8}
-                value={item.width}
-                onChange={(value) => onUpdateItem(item.id, { width: value })}
-              />
+              <RangeControl label="Length" max={120} min={8} value={item.length} onChange={(value) => onUpdateItem(item.id, { length: value })} />
+              <RangeControl label="Height" max={96} min={8} value={item.height} onChange={(value) => onUpdateItem(item.id, { height: value })} />
+              <RangeControl label="Width" max={72} min={8} value={item.width} onChange={(value) => onUpdateItem(item.id, { width: value })} />
               <div className="swatch-row" aria-label={`${item.name} color`}>
                 {colorChoices.map((color) => (
                   <button
@@ -1112,6 +1385,14 @@ function WizardPanel({
                     aria-label={`Choose ${color}`}
                   />
                 ))}
+              </div>
+              <div className="item-photo-row">
+                {item.imageUrl && <img src={item.imageUrl} alt="" />}
+                <UploadTile
+                  label={item.imageUrl ? 'Replace item picture' : 'Upload item picture'}
+                  onUpload={(file) => onItemImageUpload(item.id, file)}
+                  testId={`item-upload-${item.id}`}
+                />
               </div>
             </div>
           ))}
@@ -1179,37 +1460,10 @@ function WizardPanel({
     return (
       <>
         <PanelHeader icon={<MapPin size={20} />} title="Confirm the project address" />
-        <div className="address-grid compact">
-          <label>
-            State
-            <input value={address.state} onChange={(event) => onAddressChange({ ...address, state: event.target.value })} />
-          </label>
-          <label>
-            City
-            <input value={address.city} onChange={(event) => onAddressChange({ ...address, city: event.target.value })} />
-          </label>
-          <label className="wide-field">
-            Address
-            <input
-              value={address.street}
-              onChange={(event) => onAddressChange({ ...address, street: event.target.value })}
-            />
-          </label>
-          <label>
-            Apartment
-            <input
-              value={address.apartment}
-              onChange={(event) => onAddressChange({ ...address, apartment: event.target.value })}
-            />
-          </label>
-          <label>
-            Floor
-            <input value={address.floor} onChange={(event) => onAddressChange({ ...address, floor: event.target.value })} />
-          </label>
-        </div>
+        <AddressEditor address={address} onAddressChange={onAddressChange} compact />
         <div className="inline-output">
           <MapPin size={17} />
-          <span>Used for search radius and pickup practicality</span>
+          <span>Used for Marketplace distance and pickup practicality</span>
         </div>
       </>
     )
@@ -1217,7 +1471,7 @@ function WizardPanel({
 
   return (
     <>
-      <PanelHeader icon={<Sparkles size={20} />} title="View design options" />
+      <PanelHeader icon={<Sofa size={20} />} title="View design options" />
       <div className="option-grid">
         {designOptions.map((option) => (
           <button
@@ -1245,22 +1499,264 @@ function WizardPanel({
           ))}
         </ul>
         <button className="secondary-action">
-          <Sparkles size={17} />
-          <span>Select the option</span>
+          <Check size={17} />
+          <span>Select this option</span>
         </button>
       </div>
+      <UploadTile label="Add your own item picture" onUpload={onNewUpload} testId="inline-upload-input" />
     </>
   )
+}
+
+function ObjectEditor({
+  object,
+  onDelete,
+  onDuplicate,
+  onImageUpload,
+  onUpdate,
+}: {
+  object: RoomObject
+  onDelete: () => void
+  onDuplicate: () => void
+  onImageUpload: (file: File) => void
+  onUpdate: (patch: Partial<RoomObject>) => void
+}) {
+  return (
+    <div className="object-editor-panel">
+      <div className="selected-object-title">
+        <ObjectIcon kind={object.kind} />
+        <div>
+          <strong>{object.name}</strong>
+          <span>{objectDefaults[object.kind].label}</span>
+        </div>
+      </div>
+
+      <div className="nudge-grid" aria-label="Move selected object">
+        <button onClick={() => onUpdate({ y: clamp(object.y - 2, 4, 96) })} aria-label="Move up">
+          Up
+        </button>
+        <button onClick={() => onUpdate({ x: clamp(object.x - 2, 4, 96) })} aria-label="Move left">
+          Left
+        </button>
+        <button onClick={() => onUpdate({ x: clamp(object.x + 2, 4, 96) })} aria-label="Move right">
+          Right
+        </button>
+        <button onClick={() => onUpdate({ y: clamp(object.y + 2, 4, 96) })} aria-label="Move down">
+          Down
+        </button>
+      </div>
+
+      <RangeControl controlId="object-x" label="Position X" max={96} min={4} value={object.x} onChange={(value) => onUpdate({ x: value })} />
+      <RangeControl controlId="object-y" label="Position Y" max={96} min={4} value={object.y} onChange={(value) => onUpdate({ y: value })} />
+      <RangeControl controlId="object-width" label="Object width" max={160} min={8} value={object.widthIn} onChange={(value) => onUpdate({ widthIn: value })} />
+      <RangeControl controlId="object-depth" label="Object depth" max={120} min={4} value={object.depthIn} onChange={(value) => onUpdate({ depthIn: value })} />
+      <RangeControl controlId="object-height" label="Object height" max={108} min={2} value={object.heightIn} onChange={(value) => onUpdate({ heightIn: value })} />
+      <RangeControl controlId="object-rotation" label="Rotation" max={359} min={0} value={object.rotation} onChange={(value) => onUpdate({ rotation: value })} />
+
+      <div className="quick-actions">
+        <button onClick={() => onUpdate({ rotation: normalizeRotation(object.rotation - 15) })}>
+          <RotateCcw size={15} />
+          <span>Rotate</span>
+        </button>
+        <button onClick={() => onUpdate({ rotation: normalizeRotation(object.rotation + 15) })}>
+          <RotateCw size={15} />
+          <span>Rotate</span>
+        </button>
+        <button onClick={onDuplicate}>
+          <PackagePlus size={15} />
+          <span>Copy</span>
+        </button>
+        <button onClick={onDelete} disabled={object.kind === 'wall' && object.name === 'Wall 1'}>
+          <Box size={15} />
+          <span>Delete</span>
+        </button>
+      </div>
+
+      <UploadTile
+        label={object.imageUrl ? 'Replace object picture' : 'Upload object picture'}
+        onUpload={onImageUpload}
+        testId="selected-image-input"
+      />
+    </div>
+  )
+}
+
+function ShortcutPanel({
+  address,
+  budget,
+  facebookConnected,
+  onAddMarketplaceItem,
+  onConnectFacebook,
+  onDisconnectFacebook,
+  onNewUpload,
+  onOpenPlanner,
+  onAddressChange,
+  onSetBudget,
+  screen,
+  uploadedObjects,
+}: {
+  address: Address
+  budget: number
+  facebookConnected: boolean
+  screen: Screen
+  uploadedObjects: RoomObject[]
+  onAddMarketplaceItem: (kind: RoomObjectKind, label: string) => void
+  onConnectFacebook: () => void
+  onDisconnectFacebook: () => void
+  onNewUpload: (file: File) => void
+  onOpenPlanner: () => void
+  onAddressChange: (address: Address) => void
+  onSetBudget: (value: number) => void
+}) {
+  if (screen === 'inspired') {
+    return (
+      <section className="shortcut-panel">
+        <PanelHeader icon={<Sparkles size={20} />} title="Get inspired" />
+        <div className="inspiration-grid">
+          {liveBackdrops.map((backdrop) => (
+            <button key={backdrop.id} className={`inspiration-card ${backdrop.className}`} onClick={onOpenPlanner}>
+              <span>{backdrop.label}</span>
+              <small>Start from this room mood</small>
+            </button>
+          ))}
+        </div>
+      </section>
+    )
+  }
+
+  if (screen === 'marketplace') {
+    return (
+      <section className="shortcut-panel">
+        <PanelHeader icon={<Search size={20} />} title="Find items" />
+        <div className="market-list">
+          {marketplaceItems.map((item) => (
+            <div className="market-row" key={item.name}>
+              <div>
+                <strong>{item.name}</strong>
+                <span>
+                  {item.price} / {item.distance}
+                </span>
+              </div>
+              <button className="secondary-action" onClick={() => onAddMarketplaceItem(item.kind, item.name)}>
+                <Plus size={16} />
+                <span>Use in room</span>
+              </button>
+            </div>
+          ))}
+        </div>
+      </section>
+    )
+  }
+
+  if (screen === 'carrier') {
+    return (
+      <section className="shortcut-panel">
+        <PanelHeader icon={<Truck size={20} />} title="Find a carrier" />
+        <div className="service-grid">
+          <StatusNode label="Pickup van" value="$45 estimate / 4.8 mi route" active />
+          <StatusNode label="Two-person lift" value="$85 estimate / pending approval" />
+          <StatusNode label="Seller pickup window" value="Ask after item approval" />
+        </div>
+      </section>
+    )
+  }
+
+  if (screen === 'uploads') {
+    return (
+      <section className="shortcut-panel">
+        <PanelHeader icon={<Upload size={20} />} title="Upload items" />
+        <UploadTile label="Upload an item picture and place it in the room" onUpload={onNewUpload} testId="new-upload-input" />
+        <div className="uploaded-grid">
+          {uploadedObjects.length === 0 ? (
+            <p>No uploaded item pictures yet.</p>
+          ) : (
+            uploadedObjects.map((object) => (
+              <div className="uploaded-card" key={object.id}>
+                <img src={object.imageUrl} alt="" />
+                <strong>{object.name}</strong>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
+    )
+  }
+
+  if (screen === 'prices') {
+    return (
+      <section className="shortcut-panel">
+        <PanelHeader icon={<Gauge size={20} />} title="Compare prices" />
+        <div className="budget-readout compact-readout">
+          <span>${budget.toLocaleString()}</span>
+          <small>Total target</small>
+        </div>
+        <input
+          className="budget-slider"
+          max={2600}
+          min={350}
+          step={50}
+          type="range"
+          value={budget}
+          onChange={(event) => onSetBudget(Number(event.target.value))}
+        />
+        <div className="service-grid">
+          <StatusNode label="Best value" value="Easy Pickup / under target" active />
+          <StatusNode label="Highest fit" value="Clear Slate / 94% confidence" />
+          <StatusNode label="Weak pool" value="Soft Gallery / needs backups" />
+        </div>
+      </section>
+    )
+  }
+
+  if (screen === 'facebook') {
+    return (
+      <section className="shortcut-panel">
+        <PanelHeader icon={<Wifi size={20} />} title="Connect Facebook" />
+        <div className="facebook-panel">
+          <div>
+            <strong>{facebookConnected ? 'Facebook is connected' : 'Facebook is not connected'}</strong>
+            <p>This prototype simulates the connection state. A real Marketplace connection will need Facebook app configuration and auth approval.</p>
+          </div>
+          {facebookConnected ? (
+            <button className="secondary-action" onClick={onDisconnectFacebook}>
+              <Link size={16} />
+              <span>Disconnect Facebook</span>
+            </button>
+          ) : (
+            <button className="primary-action" onClick={onConnectFacebook}>
+              <Wifi size={16} />
+              <span>Connect Facebook</span>
+            </button>
+          )}
+        </div>
+      </section>
+    )
+  }
+
+  if (screen === 'profile') {
+    return (
+      <section className="shortcut-panel">
+        <PanelHeader icon={<UserRound size={20} />} title="Profile" />
+        <AddressEditor address={address} onAddressChange={onAddressChange} compact />
+        <div className="inline-output">
+          <BadgeCheck size={17} />
+          <span>Profile details are prototype-only for now</span>
+        </div>
+      </section>
+    )
+  }
+
+  return null
 }
 
 function GeneratingState() {
   return (
     <section className="generating-panel" aria-live="polite">
-      <div className="thinking-ring">
-        <Sparkles size={38} />
+      <div className="thinking-room">
+        <Sofa size={34} />
       </div>
       <span className="eyebrow">AI thinking</span>
-      <h2>Lining up room design, fit checks, prices, and listing health.</h2>
+      <h2>Checking room fit, Marketplace pools, prices, and pickup practicality.</h2>
       <div className="scan-bars" aria-hidden="true">
         <span />
         <span />
@@ -1270,20 +1766,66 @@ function GeneratingState() {
   )
 }
 
+function AddressEditor({
+  address,
+  compact,
+  onAddressChange,
+}: {
+  address: Address
+  compact?: boolean
+  onAddressChange: (address: Address) => void
+}) {
+  return (
+    <div className={`address-grid ${compact ? 'compact' : ''}`}>
+      <label>
+        State
+        <input value={address.state} onChange={(event) => onAddressChange({ ...address, state: event.target.value })} />
+      </label>
+      <label>
+        City
+        <input value={address.city} onChange={(event) => onAddressChange({ ...address, city: event.target.value })} />
+      </label>
+      <label className="wide-field">
+        Address
+        <input value={address.street} onChange={(event) => onAddressChange({ ...address, street: event.target.value })} />
+      </label>
+      <label>
+        Apartment
+        <input value={address.apartment} onChange={(event) => onAddressChange({ ...address, apartment: event.target.value })} />
+      </label>
+      <label>
+        Floor
+        <input value={address.floor} onChange={(event) => onAddressChange({ ...address, floor: event.target.value })} />
+      </label>
+    </div>
+  )
+}
+
+function UploadTile({ label, onUpload, testId }: { label: string; onUpload: (file: File) => void; testId: string }) {
+  return (
+    <label className="upload-tile">
+      <ImagePlus size={18} />
+      <span>{label}</span>
+      <input
+        accept="image/*"
+        data-testid={testId}
+        type="file"
+        onChange={(event) => {
+          const file = event.target.files?.[0]
+          if (file) onUpload(file)
+          event.target.value = ''
+        }}
+      />
+    </label>
+  )
+}
+
 function PanelHeader({ icon, title }: { icon: ReactNode; title: string }) {
   return (
     <div className="panel-header">
       <span className="panel-icon">{icon}</span>
       <h2>{title}</h2>
     </div>
-  )
-}
-
-function IconButton({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
-  return (
-    <button className="icon-button" onClick={onClick} title={label} aria-label={label}>
-      {icon}
-    </button>
   )
 }
 
@@ -1309,12 +1851,14 @@ function ChipGrid({
 }
 
 function RangeControl({
+  controlId,
   label,
   max,
   min,
   onChange,
   value,
 }: {
+  controlId?: string
   label: string
   max: number
   min: number
@@ -1327,7 +1871,15 @@ function RangeControl({
         {label}
         <strong>{Math.round(value)}</strong>
       </span>
-      <input max={max} min={min} type="range" value={value} onChange={(event) => onChange(Number(event.target.value))} />
+      <input
+        aria-label={label}
+        data-control={controlId}
+        max={max}
+        min={min}
+        type="range"
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+      />
     </label>
   )
 }
@@ -1342,19 +1894,126 @@ function StatusNode({ active, label, value }: { active?: boolean; label: string;
 }
 
 function ObjectIcon({ kind }: { kind: RoomObjectKind }) {
-  if (kind === 'wall') return <BrickWall size={16} />
-  if (kind === 'door') return <DoorOpen size={16} />
-  if (kind === 'window') return <Square size={16} />
-  return <LampDesk size={16} />
+  const Icon = objectDefaults[kind].icon
+  return <Icon size={16} />
 }
 
-function labelFromAction(action: string) {
-  return action.replace(/^\w/, (letter) => letter.toUpperCase())
+function createRoomObject(kind: RoomObjectKind, x: number, y: number, rotation = 0, name?: string, imageUrl?: string): RoomObject {
+  const defaults = objectDefaults[kind]
+  return {
+    id: `${kind}-${Date.now()}-${Math.round(Math.random() * 100000)}`,
+    kind,
+    name: name ?? `${defaults.label} ${Math.max(1, Math.round(Math.random() * 20))}`,
+    x,
+    y,
+    widthIn: defaults.widthIn,
+    depthIn: defaults.depthIn,
+    heightIn: defaults.heightIn,
+    rotation,
+    color: defaults.color,
+    imageUrl,
+  }
 }
 
-function kindLabel(kind: RoomObjectKind) {
-  if (kind === 'hang') return 'Hanging object'
-  return kind.replace(/^\w/, (letter) => letter.toUpperCase())
+function createObjectMesh(object: RoomObject, selected: boolean) {
+  const widthFt = Math.max(0.2, object.widthIn / 12)
+  const depthFt = Math.max(0.2, object.depthIn / 12)
+  const heightFt = Math.max(0.05, object.heightIn / 12)
+  const x = (object.x / 100 - 0.5) * ROOM_WIDTH_FT
+  const z = (object.y / 100 - 0.5) * ROOM_DEPTH_FT
+  const color = new THREE.Color(object.color)
+
+  const group = new THREE.Group()
+  group.position.set(x, 0, z)
+  group.rotation.y = -THREE.MathUtils.degToRad(object.rotation)
+
+  if (object.kind === 'lamp') {
+    const pole = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.05, 0.05, heightFt, 12),
+      new THREE.MeshStandardMaterial({ color, roughness: 0.4 }),
+    )
+    pole.position.y = heightFt / 2
+    const shade = new THREE.Mesh(
+      new THREE.CylinderGeometry(widthFt / 2, widthFt / 2.4, 0.5, 18),
+      new THREE.MeshStandardMaterial({ color: 0xf0e3b2, roughness: 0.38 }),
+    )
+    shade.position.y = heightFt
+    group.add(pole, shade)
+  } else {
+    const geometry = new THREE.BoxGeometry(widthFt, heightFt, depthFt)
+    const material = new THREE.MeshStandardMaterial({
+      color,
+      metalness: object.kind === 'window' ? 0.05 : 0.02,
+      roughness: 0.52,
+      transparent: object.kind === 'window',
+      opacity: object.kind === 'window' ? 0.72 : 1,
+    })
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.castShadow = true
+    mesh.receiveShadow = true
+    mesh.position.y = heightFt / 2
+    group.add(mesh)
+  }
+
+  if (selected) {
+    const outlineGeometry = new THREE.BoxGeometry(widthFt + 0.12, heightFt + 0.12, depthFt + 0.12)
+    const outline = new THREE.LineSegments(
+      new THREE.EdgesGeometry(outlineGeometry),
+      new THREE.LineBasicMaterial({ color: 0x26756b }),
+    )
+    outline.position.y = heightFt / 2
+    group.add(outline)
+  }
+
+  return group
+}
+
+function readImageFile(file: File, onLoad: (imageUrl: string) => void) {
+  const reader = new FileReader()
+  reader.onload = () => {
+    if (typeof reader.result === 'string') onLoad(reader.result)
+  }
+  reader.readAsDataURL(file)
+}
+
+function setCameraPosition(camera: THREE.PerspectiveCamera, preset: CameraPreset) {
+  if (preset === 'top') camera.position.set(0, 18, 0.01)
+  if (preset === 'front') camera.position.set(0, 5.2, 15)
+  if (preset === 'corner') camera.position.set(9, 7, 10)
+  camera.lookAt(0, 0.8, 0)
+}
+
+function inchesToWidthPercent(value: number) {
+  return clamp((value / ROOM_WIDTH_IN) * 100, 3, 86)
+}
+
+function inchesToDepthPercent(value: number) {
+  return clamp((value / ROOM_DEPTH_IN) * 100, 3, 86)
+}
+
+function screenTitle(screen: Screen) {
+  const titles: Record<Screen, string> = {
+    start: 'Start a room',
+    wizard: 'Planner',
+    rooms: 'Your rooms',
+    inspired: 'Get inspired',
+    marketplace: 'Find items',
+    carrier: 'Find a carrier',
+    uploads: 'Upload items',
+    prices: 'Compare prices',
+    facebook: 'Connect Facebook',
+    profile: 'Profile',
+    review: 'Seller review',
+  }
+  return titles[screen]
+}
+
+function isShortcutScreen(screen: Screen) {
+  return ['inspired', 'marketplace', 'carrier', 'uploads', 'prices', 'facebook', 'profile'].includes(screen)
+}
+
+function normalizeRotation(value: number) {
+  return Math.round((value + 360) % 360)
 }
 
 function clamp(value: number, min: number, max: number) {
